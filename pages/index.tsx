@@ -43,6 +43,7 @@ export default function Home() {
       const data = await response.json();
       setDiffResult(data);
       setLoading(false);
+      console.log(generateLatestChangeText())
       console.log("data: ", data);
     }
   };
