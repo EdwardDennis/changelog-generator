@@ -35,8 +35,8 @@ export default function Home() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          source: previousDoc,
-          destination: newDoc,
+          base: previousDoc,
+          revision: newDoc,
         }),
       });
 
@@ -44,7 +44,6 @@ export default function Home() {
       setDiffResult(data);
       setLoading(false);
       console.log(generateLatestChangeText())
-      console.log("data: ", data);
     }
   };
 
