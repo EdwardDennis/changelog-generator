@@ -29,7 +29,7 @@ export default function Home() {
     setLoading(true);
 
     if (previousDoc && newDoc) {
-      const response = await fetch("/api/diff", {
+      const response = await fetch("/api/specs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
