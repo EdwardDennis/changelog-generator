@@ -33,7 +33,16 @@ export default async function handler(req, res) {
     }
 
     const result = await apiResponse.json();
-    res.status(200).json(result);
+
+    const groupedResult = result.changes.reduce((acc, el) => {
+      const key = el["operationId"];
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(el);
+      return acc;
+    }, {});
+    res.status(200).json(groupedResult);
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({ message: error.message });

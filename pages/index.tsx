@@ -10,10 +10,13 @@ interface Schema {
 export default function Home() {
   const [previousDoc, setPreviousDoc] = useState<string | null>(null);
   const [newDoc, setNewDoc] = useState<string | null>(null);
-  const [diffResult, setDiffResult] = useState<string | null>(null);
+  const [changelog, setChangelog] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>, docSetter: React.Dispatch<React.SetStateAction<string | null>>) => {
+  const handleFileChange = async (
+    e: ChangeEvent<HTMLInputElement>,
+    docSetter: React.Dispatch<React.SetStateAction<string | null>>
+  ) => {
     const file = e.target.files ? e.target.files[0] : null;
     if (file) {
       const reader = new FileReader();
@@ -29,81 +32,101 @@ export default function Home() {
     setLoading(true);
 
     if (previousDoc && newDoc) {
-      const response = await fetch("/api/specs", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          base: previousDoc,
-          revision: newDoc,
-        }),
-      });
+      try {
+        const changesResponse = await fetch("/api/specs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            base: previousDoc,
+            revision: newDoc,
+          }),
+        });
 
-      const data = await response.json();
-      setDiffResult(data);
-      setLoading(false);
-      console.log(generateLatestChangeText())
+        if (!changesResponse.ok) {
+          throw new Error(`HTTP error! status: ${changesResponse.status}`);
+        }
+
+        // Extract the JSON data from the response
+        const changesData = await changesResponse.json();
+
+        const changelogResponse = await fetch("/api/changelog", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            version: JSON.parse(newDoc).info.version,
+            changes: changesData, // Use the parsed JSON data here
+          }),
+        });
+
+        if (!changelogResponse.ok) {
+          throw new Error(`HTTP error! status: ${changelogResponse.status}`);
+        }
+
+        const changelogData = await changelogResponse.text();
+        setChangelog(changelogData);
+      } catch (error) {
+        console.error("There was an error!", error);
+      } finally {
+        setLoading(false);
+      }
     }
   };
-
-  function formatDate(date: Date): string {
-    const day = date.getUTCDate().toString().padStart(2, "0");
-    const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
-    const year = date.getUTCFullYear();
-    return `${day}/${month}/${year}`;
-  }
-
-  function generateLatestChangeText(): string {
-    if (newDoc) {
-      const newSchema: Schema = JSON.parse(newDoc);
-      const version = newSchema.info.version;
-      const todaysDate = formatDate(new Date());
-      return `## Latest Change ${todaysDate} ${version}`;
-    }
-    return '';
-  }
 
   return (
     <div className="container mx-auto p-4">
       <Head>
-        <title>Swagger Document Upload</title>
+        <title>Changelog Generator</title>
       </Head>
 
-      <h1 className="text-2xl font-bold mb-6">Swagger Document Upload</h1>
+      <h1 className="text-2xl font-bold mb-6">Changelog Generator</h1>
 
       <div className="mb-4">
-        <label className="block text-gray-700 text-sm font-bold mb-2">
-          Previous Swagger Doc
+        <label className="form-control w-full max-w-xs">
+          <div className="label">
+            <span className="label-text">Old swagger spec</span>
+          </div>
         </label>
         <input
           type="file"
-          className="file-input file-input-bordered file-input-primary w-full max-w-xs"
+          className="file-input w-full max-w-xs"
           accept=".yaml,.yml,.json"
           onChange={(e) => handleFileChange(e, setPreviousDoc)}
         />
       </div>
       <div className="mb-4">
-        <label className="block text-gray-700 text-sm font-bold mb-2">
-          New Swagger Doc
+        <label className="form-control w-full max-w-xs">
+          <div className="label">
+            <span className="label-text">New swagger spec</span>
+          </div>
         </label>
         <input
           type="file"
-          className="file-input file-input-bordered file-input-primary w-full max-w-xs"
+          className="file-input w-full max-w-xs"
           accept=".yaml,.yml,.json"
           onChange={(e) => handleFileChange(e, setNewDoc)}
         />
       </div>
 
       <button
-        className={`btn btn-xs sm:btn-sm md:btn-md lg:btn-lg ${
+        className={`btn btn-primary btn-xs sm:btn-sm md:btn-md lg:btn-lg mb-5 ${
           loading ? "loading loading-spinner" : ""
         }`}
         onClick={(e) => submitDiffRequest()}
         disabled={loading}
       >
-        Generate change log
+        Generate changelog
       </button>
+      {changelog && (
+        <div className="mockup-code">
+          <pre>
+            <code>{changelog}</code>
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
