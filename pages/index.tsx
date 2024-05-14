@@ -30,9 +30,21 @@ export default function Home() {
         formData.append("previous", previousZip);
         formData.append("new", newZip);
 
-        const changelogResponse = await fetch("/api/changelog", {
+        const changesResponse = await fetch("/api/specs", {
           method: "POST",
           body: formData,
+        });
+
+        if (!changesResponse.ok) {
+          throw new Error(`HTTP error! status: ${changesResponse.status}`);
+        }
+
+        // Extract the JSON data from the response
+        const changesData = await changesResponse.json();
+
+        const changelogResponse = await fetch("/api/changelog", {
+          method: "POST",
+          body: changesData,
         });
 
         if (!changelogResponse.ok) {
