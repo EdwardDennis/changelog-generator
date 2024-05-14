@@ -8,58 +8,31 @@ interface Schema {
 }
 
 export default function Home() {
-  const [previousDoc, setPreviousDoc] = useState<string | null>(null);
-  const [newDoc, setNewDoc] = useState<string | null>(null);
+  const [previousDoc, setPreviousDoc] = useState<File | null>(null);
+  const [newDoc, setNewDoc] = useState<File | null>(null);
   const [changelog, setChangelog] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const handleFileChange = async (
+  const handleFileChange = (
     e: ChangeEvent<HTMLInputElement>,
-    docSetter: React.Dispatch<React.SetStateAction<string | null>>
+    docSetter: React.Dispatch<React.SetStateAction<File | null>>
   ) => {
     const file = e.target.files ? e.target.files[0] : null;
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e: ProgressEvent<FileReader>) => {
-        const content = e.target?.result;
-        docSetter(content as string);
-      };
-      reader.readAsText(file);
-    }
+    docSetter(file);
   };
 
-  const submitDiffRequest = async () => {
+  const getChangeLog = async () => {
     setLoading(true);
 
     if (previousDoc && newDoc) {
       try {
-        const changesResponse = await fetch("/api/specs", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            base: previousDoc,
-            revision: newDoc,
-          }),
-        });
-
-        if (!changesResponse.ok) {
-          throw new Error(`HTTP error! status: ${changesResponse.status}`);
-        }
-
-        // Extract the JSON data from the response
-        const changesData = await changesResponse.json();
+        const formData = new FormData();
+        formData.append("previous", previousDoc);
+        formData.append("new", newDoc);
 
         const changelogResponse = await fetch("/api/changelog", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            version: JSON.parse(newDoc).info.version,
-            changes: changesData, // Use the parsed JSON data here
-          }),
+          body: formData,
         });
 
         if (!changelogResponse.ok) {
@@ -115,7 +88,7 @@ export default function Home() {
         className={`btn btn-primary btn-xs sm:btn-sm md:btn-md lg:btn-lg mb-5 ${
           loading ? "loading loading-spinner" : ""
         }`}
-        onClick={(e) => submitDiffRequest()}
+        onClick={(e) => getChangeLog()}
         disabled={loading}
       >
         Generate changelog
