@@ -8,8 +8,8 @@ interface Schema {
 }
 
 export default function Home() {
-  const [previousDoc, setPreviousDoc] = useState<File | null>(null);
-  const [newDoc, setNewDoc] = useState<File | null>(null);
+  const [previousZip, setPreviousZip] = useState<File | null>(null);
+  const [newZip, setNewZip] = useState<File | null>(null);
   const [changelog, setChangelog] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -24,11 +24,11 @@ export default function Home() {
   const getChangeLog = async () => {
     setLoading(true);
 
-    if (previousDoc && newDoc) {
+    if (previousZip && newZip) {
       try {
         const formData = new FormData();
-        formData.append("previous", previousDoc);
-        formData.append("new", newDoc);
+        formData.append("previous", previousZip);
+        formData.append("new", newZip);
 
         const changelogResponse = await fetch("/api/changelog", {
           method: "POST",
@@ -67,7 +67,7 @@ export default function Home() {
           type="file"
           className="file-input w-full max-w-xs"
           accept=".zip"
-          onChange={(e) => handleFileChange(e, setPreviousDoc)}
+          onChange={(e) => handleFileChange(e, setPreviousZip)}
         />
       </div>
       <div className="mb-4">
@@ -80,7 +80,7 @@ export default function Home() {
           type="file"
           className="file-input w-full max-w-xs"
           accept=".zip"
-          onChange={(e) => handleFileChange(e, setNewDoc)}
+          onChange={(e) => handleFileChange(e, setNewZip)}
         />
       </div>
 
