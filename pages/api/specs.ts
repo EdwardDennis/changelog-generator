@@ -9,10 +9,14 @@ export const config = {
 };
 
 interface JsonFileContent {
-  paths?: Record<string, Record<string, { description?: string }>>;
+  paths?: Record<
+    string,
+    Record<string, { description?: string; summary?: string }>
+  >;
 }
 
 const changes: string[] = [];
+//TODO: change this to an object to account for API response
 
 export default async function handler(
   req: NextApiRequest,
@@ -24,32 +28,38 @@ export default async function handler(
     return;
   }
 
-  // Apply the multer middleware
-  await applyMulterMiddleware(req, res, multerUploads);
+  try {
+    await applyMulterMiddleware(req, res, multerUploads);
 
-  // Access the uploaded files as buffers
-  const previousZipBuffer = (req as any).files["previous"][0].buffer;
-  const newZipBuffer = (req as any).files["new"][0].buffer;
+    const previousZipBuffer = (req as any).files["previous"][0].buffer;
+    const newZipBuffer = (req as any).files["new"][0].buffer;
 
-  // Load the ZIP files using JSZip
-  const previousZip = await JSZip.loadAsync(previousZipBuffer);
-  const newZip = await JSZip.loadAsync(newZipBuffer);
+    const previousZip = await JSZip.loadAsync(previousZipBuffer);
+    const newZip = await JSZip.loadAsync(newZipBuffer);
 
-  const previousJsonFiles = await getJsonFilesFromZip(previousZip);
-  const newJsonFiles = await getJsonFilesFromZip(newZip);
-  await checkZipFilesForAdditionsAndDeletions(previousZip, newZip);
+    const previousJsonFiles = await getJsonFilesFromZip(previousZip);
+    const newJsonFiles = await getJsonFilesFromZip(newZip);
 
-  const fileNames = Object.keys(newJsonFiles);
-  for (let i = 0; i < fileNames.length; i++) {
-    const fileName = fileNames[i];
-    const base = previousJsonFiles[fileName];
-    const revision = newJsonFiles[fileName];
-    if (base && revision) {
-      await getChangesFromAPI(base, revision);
+    await checkZipFilesForAdditionsAndDeletions(previousZip, newZip);
+
+    const allFileNames = new Set([
+      ...Object.keys(previousJsonFiles),
+      ...Object.keys(newJsonFiles),
+    ]);
+
+    for (const fileName of allFileNames) {
+      const base = previousJsonFiles[fileName];
+      const revision = newJsonFiles[fileName];
+      if (base && revision) {
+        await getChangesFromAPI(base, revision);
+      }
     }
+    console.log(changes);
+    res.status(200).json(changes);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
   }
-  console.log(changes);
-  res.status(200).json(changes);
 }
 
 async function getJsonFilesFromZip(
@@ -57,27 +67,24 @@ async function getJsonFilesFromZip(
 ): Promise<Record<string, JsonFileContent>> {
   const jsonFiles: Record<string, JsonFileContent> = {};
 
-  // Iterate over each file in the zip
   for (const fileName of Object.keys(zip.files)) {
     const fileData = zip.files[fileName];
-    // Skip directories and non-JSON files
     if (
       fileData.dir ||
       !fileName.endsWith(".json") ||
-      fileName.includes("__MACOSX") ||
-      fileName.startsWith("._")
+      !fileName.includes("spec-files/") ||
+      fileName.includes("__MACOSX")
     ) {
       continue;
     }
     try {
-      // Extract the file content as a string
+      const relativePath = fileName.substring(
+        fileName.lastIndexOf("spec-files/") + "spec-files/".length
+      );
       const content = await fileData.async("string");
-      // Parse the JSON content and add it to the jsonFiles object
-      jsonFiles[fileName] = JSON.parse(content);
+      jsonFiles[relativePath] = JSON.parse(content);
     } catch (error) {
-      // Log the error and the file name
       console.error(`Error parsing JSON from file "${fileName}":`, error);
-      // You may choose to throw an error, return partial results, or handle the error as appropriate
       throw new Error(
         `Error parsing JSON from file "${fileName}": ${error.message}`
       );
@@ -104,30 +111,44 @@ async function checkZipFilesForAdditionsAndDeletions(
     (name) => !newFileNames.includes(name)
   );
 
-  for (const fileName of addedFiles) {
-    const fileContent = newJsonFiles[fileName];
-    if (fileContent.paths) {
-      for (const path of Object.keys(fileContent.paths)) {
-        const methods = fileContent.paths[path];
-        for (const method of Object.keys(methods)) {
-          if (["get", "post", "delete", "put", "patch"].includes(method)) {
-            const description = methods[method].description;
-            changes.push(`${description} - New API added`);
-          }
-        }
-      }
-    }
+  if (addedFiles.length > 0 || removedFiles.length > 0) {
+    processFiles(addedFiles, newJsonFiles, "New API added");
+    processFiles(removedFiles, previousJsonFiles, "API removed");
   }
+}
 
-  for (const fileName of removedFiles) {
-    const fileContent = previousJsonFiles[fileName];
+function processFiles(
+  fileNames: string[],
+  jsonFiles: Record<string, JsonFileContent>,
+  changeType: string
+) {
+  const apiMethods = ["get", "post", "delete", "put", "patch"];
+  const apiNumberRegex = /(API#\d+\.?)(\/API#\d+\.?)?/i;
+  for (const fileName of fileNames) {
+    const fileContent = jsonFiles[fileName];
     if (fileContent.paths) {
       for (const path of Object.keys(fileContent.paths)) {
         const methods = fileContent.paths[path];
         for (const method of Object.keys(methods)) {
-          if (["get", "post", "delete", "put", "patch"].includes(method)) {
+          if (apiMethods.includes(method)) {
             const description = methods[method].description;
-            changes.push(`${description} - API removed`);
+            const summary = methods[method].summary;
+            const apiNumberInDescription = description.match(apiNumberRegex);
+            const apiNumberInSummary = description.match(apiNumberRegex);
+
+            if (apiNumberInDescription) {
+              const apiNumber = apiNumberInDescription[0]
+                .replace(/\./g, "")
+                .toUpperCase();
+              changes.push(`${apiNumber} - ${changeType}`);
+            } else if (apiNumberInSummary) {
+              const apiNumber = apiNumberInSummary[0]
+                .replace(/\./g, "")
+                .toUpperCase();
+              changes.push(`${apiNumber} - ${changeType}`);
+            } else {
+              changes.push(`${summary} - ${changeType}`);
+            }
           }
         }
       }
@@ -140,8 +161,8 @@ async function getChangesFromAPI(base, revision) {
     const apiUrl = `https://api.oasdiff.com/tenants/${process.env.OASDIFF_ID}/changelog`;
 
     const urlEncodedData = new URLSearchParams();
-    urlEncodedData.append("base", base);
-    urlEncodedData.append("revision", revision);
+    urlEncodedData.append("base", JSON.stringify(base));
+    urlEncodedData.append("revision", JSON.stringify(revision));
 
     const apiResponse = await fetch(apiUrl, {
       method: "POST",
@@ -156,17 +177,22 @@ async function getChangesFromAPI(base, revision) {
     }
 
     const result = await apiResponse.json();
+    console.log(result);
 
-    const groupedChanges = result.changes.reduce((acc, el) => {
-      const key = el["operationId"];
-      if (!acc[key]) {
-        acc[key] = [];
-      }
-      acc[key].push(el);
-      return acc;
-    }, {});
-    changes.push(groupedChanges);
+    // const groupedChanges = result.changes.reduce((acc, el) => {
+    //   const key = el["operationId"];
+    //   if (!acc[key]) {
+    //     acc[key] = [];
+    //   }
+    //   acc[key].push(el);
+    //   return acc;
+    // }, {});
+
+    if (result.changes.length > 0) {
+      changes.push(result.changes);
+    }
   } catch (error) {
     console.error("Error:", error);
+    throw error;
   }
 }

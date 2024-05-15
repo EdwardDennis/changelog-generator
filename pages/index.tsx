@@ -42,17 +42,17 @@ export default function Home() {
         // Extract the JSON data from the response
         const changesData = await changesResponse.json();
 
-        const changelogResponse = await fetch("/api/changelog", {
-          method: "POST",
-          body: changesData,
-        });
+        // const changelogResponse = await fetch("/api/changelog", {
+        //   method: "POST",
+        //   body: changesData,
+        // });
 
-        if (!changelogResponse.ok) {
-          throw new Error(`HTTP error! status: ${changelogResponse.status}`);
-        }
+        // if (!changelogResponse.ok) {
+        //   throw new Error(`HTTP error! status: ${changelogResponse.status}`);
+        // }
 
-        const changelogData = await changelogResponse.text();
-        setChangelog(changelogData);
+        // const changelogData = await changelogResponse.text();
+        // setChangelog(changelogData);
       } catch (error) {
         console.error("There was an error!", error);
       } finally {
