@@ -13,26 +13,36 @@ export default async function handler(req, res) {
     return;
   }
 
-  const changelog = generateChangeLog(req.body.version, req.body.changes);
-  console.log("changelog: ", changelog);
+  const changelog = generateChangeLog(
+    req.body.version,
+    req.body.workPackage,
+    req.body.changes
+  );
 
   res.status(200).send(changelog);
 }
 
-function generateChangeLog(version, changes) {
-  const changeLogEntries = Object.entries(changes).map(
-    ([operationId, changesArray]) => {
-      const changeSummary = changesArray
-        .map((change, idx) => {
-          return `${idx + 1}: ${change.text}`;
-        })
-        .join("\n");
+function generateChangeLog(version, workPackage, changes) {
+  const changeLogEntries = changes
+    .sort((a, b) => {
+      const firstApiNumberA = extractFirstApiNumber(a.apiNumber);
+      const firstApiNumberB = extractFirstApiNumber(b.apiNumber);
+      return firstApiNumberA - firstApiNumberB;
+    })
+    .map((change, idx) => {
+      return `${idx + 1}: ${change.apiNumber} - ${change.description} - path: ${
+        change.path
+      }`;
+    })
+    .join("\n");
 
-      return `\n---\n\n### Changes to ${operationId}\n\nChange Summary:\n\n${changeSummary}\n`;
-    }
-  );
-  console.log(changeLogEntries);
-  return generateLatestChangeText(version) + changeLogEntries.join("\n");
+  const changeLog = `\n---\n\n### ${workPackage}\n\nChange Summary:\n\n${changeLogEntries}\n`;
+  return generateLatestChangeText(version) + changeLog;
+}
+
+function extractFirstApiNumber(apiNumberStr) {
+  const matches = apiNumberStr.match(/API#(\d+)/);
+  return matches ? parseInt(matches[1], 10) : Number.MAX_SAFE_INTEGER;
 }
 
 function formatDate(date) {

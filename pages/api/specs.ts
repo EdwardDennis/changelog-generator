@@ -13,6 +13,9 @@ export const config = {
 };
 
 interface JsonFileContent {
+  info: {
+    version: string;
+  };
   paths?: Record<
     string,
     Record<string, { description?: string; summary?: string }>
@@ -53,31 +56,81 @@ const handleApiLogic = async (req: NextApiRequest, res: NextApiResponse) => {
     ...Object.keys(previousJsonFiles),
     ...Object.keys(newJsonFiles),
   ]);
+  let version: string | undefined;
 
-  for (const fileName of allFileNames) {
-    const base = previousJsonFiles[fileName];
-    const revision = newJsonFiles[fileName];
-    if (base && revision) {
-      const output = await getChangelog(base, revision);
-      if (output.error) {
-        return res.status(400).json({ error: output.error });
+  try {
+    for (const fileName of allFileNames) {
+      const base = previousJsonFiles[fileName];
+      const revision = newJsonFiles[fileName];
+
+      version = validateVersionConsistency(fileName, version, revision);
+
+      if (base && revision) {
+        await processFileChanges(base, revision, storedChanges);
       }
-      const outputArray = JSON.parse(output.stdout);
-      outputArray.map((change) => {
-        const apiNumberOrSummary = getApiNumberByPath(change.path, [
-          base,
-          revision,
-        ]);
-        storedChanges.push({
-          apiNumber: apiNumberOrSummary,
-          description: change.text,
-          path: change.path,
-        });
-      });
     }
+    const changeLogArgs = {
+      version: version,
+      workPackage: req.body.workPackageNumber,
+      changes: storedChanges,
+    };
+
+    handleChangeLogRequest(req, res, changeLogArgs);
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ errorMessages: [error.message] });
   }
-  res.status(200).json(storedChanges);
 };
+
+const validateVersionConsistency = (
+  fileName: string,
+  version: string | undefined,
+  revision: any
+) => {
+  if (version === undefined) {
+    return revision.info.version;
+  } else if (version !== revision.info.version) {
+    throw new Error(
+      `Invalid version in ${fileName}, expected ${version} but found ${revision.info.version}`
+    );
+  }
+  return version;
+};
+
+const processFileChanges = async (
+  base: any,
+  revision: any,
+  storedChanges: any[]
+) => {
+  const output = await getDiff(base, revision);
+  if (output.error) {
+    throw new Error(output.error);
+  }
+  const outputArray = JSON.parse(output.stdout);
+  outputArray.forEach((change: any) => {
+    const apiNumberOrSummary = getApiNumberByPath(change.path, [
+      base,
+      revision,
+    ]);
+    storedChanges.push({
+      apiNumber: apiNumberOrSummary,
+      description: change.text,
+      path: change.path,
+    });
+  });
+};
+
+// const getItsdFriendlyChangeDescription = (changeDescription: string) => {
+//   switch (changeDescription) {
+//     case "api-path-removed-without-deprecation":
+//     case "api-path-sunset-parse":
+//     case "api-path-removed-before-sunset":
+
+//     case "api-removed-without-deprecation":
+//     case "api-removed-before-sunset":
+//       return "Removed ";
+//   }
+// };
 
 const processZipFiles = async (
   previousZipBuffer: Buffer,
@@ -97,7 +150,7 @@ const processZipFiles = async (
 };
 
 // Run a Docker command to compare JSON files
-export const getChangelog = async (
+export const getDiff = async (
   base: JsonFileContent,
   revision: JsonFileContent
 ) => {
@@ -212,6 +265,10 @@ function processFiles(
 ) {
   fileNames.forEach((fileName) => {
     const fileContent = swaggerDocs[fileName];
+    console.log(
+      "dataElementName included: ",
+      JSON.stringify(fileContent).includes("dataElementName")
+    );
     if (fileContent.paths) {
       Object.keys(fileContent.paths).forEach((path) => {
         const apiNumberOrSummary = getApiNumberByPath(path, [fileContent]);
@@ -244,7 +301,7 @@ function getApiNumberByPath(
     if (apiNumberInSummary) {
       return apiNumberInSummary[0].replace(/\./g, "").toUpperCase();
     }
-    return summary;
+    return summary.replace(/\./g, "");
   };
 
   const apiNumber = swaggerDocs
@@ -278,6 +335,36 @@ function createJqlQuery(apiNumber: string, apiPath: string): string {
   text ~ "swagger"
   AND
   issuekey ~ "MI*"`;
+}
+
+const handleChangeLogRequest = async (
+  req: NextApiRequest,
+  res: NextApiResponse,
+  changeLogArgs: object
+) => {
+  try {
+    const changelogMarkdown = await getChangeLogMarkdown(changeLogArgs);
+    res.status(200).send(changelogMarkdown);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+async function getChangeLogMarkdown(body: object) {
+  const apiUrl = "http://localhost:3000/api/changelog";
+
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return await response.text();
 }
 
 async function fetchJiraData(apiUrl: string, jql: string): Promise<Response> {
