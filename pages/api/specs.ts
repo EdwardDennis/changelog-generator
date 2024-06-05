@@ -66,7 +66,7 @@ const handleApiLogic = async (req: NextApiRequest, res: NextApiResponse) => {
       version = validateVersionConsistency(fileName, version, revision);
 
       if (base && revision) {
-        await processFileChanges(base, revision, storedChanges);
+        await processFileChanges(base, revision);
       }
     }
     const changeLogArgs = {
@@ -74,6 +74,8 @@ const handleApiLogic = async (req: NextApiRequest, res: NextApiResponse) => {
       workPackage: req.body.workPackageNumber,
       changes: storedChanges,
     };
+
+    console.log(storedChanges)
 
     handleChangeLogRequest(req, res, changeLogArgs);
   } catch (error) {
@@ -100,7 +102,6 @@ const validateVersionConsistency = (
 const processFileChanges = async (
   base: any,
   revision: any,
-  storedChanges: any[]
 ) => {
   const output = await getDiff(base, revision);
   if (output.error) {
@@ -265,10 +266,6 @@ function processFiles(
 ) {
   fileNames.forEach((fileName) => {
     const fileContent = swaggerDocs[fileName];
-    console.log(
-      "dataElementName included: ",
-      JSON.stringify(fileContent).includes("dataElementName")
-    );
     if (fileContent.paths) {
       Object.keys(fileContent.paths).forEach((path) => {
         const apiNumberOrSummary = getApiNumberByPath(path, [fileContent]);
