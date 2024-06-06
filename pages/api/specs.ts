@@ -136,18 +136,6 @@ const processFileChanges = async (base: any, revision: any) => {
   });
 };
 
-// const getItsdFriendlyChangeDescription = (changeDescription: string) => {
-//   switch (changeDescription) {
-//     case "api-path-removed-without-deprecation":
-//     case "api-path-sunset-parse":
-//     case "api-path-removed-before-sunset":
-
-//     case "api-removed-without-deprecation":
-//     case "api-removed-before-sunset":
-//       return "Removed ";
-//   }
-// };
-
 const processZipFiles = async (
   previousZipBuffer: Buffer,
   newZipBuffer: Buffer
@@ -320,11 +308,16 @@ function getApiNumberByPath(
     return summary;
   };
 
+  const extractSwaggerTitle = (swaggerDoc): string =>
+    `(${swaggerDoc.info.title})`;
+
   for (const swaggerDoc of swaggerDocs) {
     if (swaggerDoc.paths && swaggerDoc.paths[path]) {
       const operation = swaggerDoc.paths[path][httpMethod.toLowerCase()];
       if (operation) {
-        return extractApiNumber(operation);
+        return (
+          extractApiNumber(operation) + " " + extractSwaggerTitle(swaggerDoc)
+        );
       }
     }
   }
