@@ -12,14 +12,30 @@ export const config = {
   },
 };
 
+interface OperationObject {
+  tags?: string[];
+  summary?: string;
+  description?: string;
+  operationId?: string;
+  parameters?: any[];
+  responses?: any;
+}
+
+interface PathItemObject {
+  get?: OperationObject;
+  put?: OperationObject;
+  post?: OperationObject;
+  delete?: OperationObject;
+  options?: OperationObject;
+  head?: OperationObject;
+  patch?: OperationObject;
+}
+
 interface JsonFileContent {
   info: {
     version: string;
   };
-  paths?: Record<
-    string,
-    Record<string, { description?: string; summary?: string }>
-  >;
+  paths?: Record<string, PathItemObject>;
 }
 
 const execAsync = promisify(exec);
@@ -75,7 +91,7 @@ const handleApiLogic = async (req: NextApiRequest, res: NextApiResponse) => {
       changes: storedChanges,
     };
 
-    console.log(storedChanges)
+    console.log(storedChanges);
 
     handleChangeLogRequest(req, res, changeLogArgs);
   } catch (error) {
@@ -99,20 +115,19 @@ const validateVersionConsistency = (
   return version;
 };
 
-const processFileChanges = async (
-  base: any,
-  revision: any,
-) => {
+const processFileChanges = async (base: any, revision: any) => {
   const output = await getDiff(base, revision);
   if (output.error) {
     throw new Error(output.error);
   }
   const outputArray = JSON.parse(output.stdout);
   outputArray.forEach((change: any) => {
-    const apiNumberOrSummary = getApiNumberByPath(change.path, [
-      base,
-      revision,
-    ]);
+    console.log(change);
+    const apiNumberOrSummary = getApiNumberByPath(
+      change.path,
+      change.operation,
+      [base, revision]
+    );
     storedChanges.push({
       apiNumber: apiNumberOrSummary,
       description: change.text,
@@ -266,52 +281,55 @@ function processFiles(
 ) {
   fileNames.forEach((fileName) => {
     const fileContent = swaggerDocs[fileName];
-    if (fileContent.paths) {
-      Object.keys(fileContent.paths).forEach((path) => {
-        const apiNumberOrSummary = getApiNumberByPath(path, [fileContent]);
+    Object.keys(fileContent.paths).forEach((path) => {
+      const pathObject = fileContent.paths[path];
+      Object.keys(pathObject).forEach((method) => {
+        //TODO: see if this works
+        const apiNumberOrSummary = getApiNumberByPath(path, method, [
+          fileContent,
+        ]);
         storedChanges.push({
           apiNumber: apiNumberOrSummary,
           description: changeType,
           path: path,
         });
       });
-    }
+    });
   });
 }
 
 function getApiNumberByPath(
   path: string,
+  httpMethod: string,
   swaggerDocs: Array<JsonFileContent>
 ): string {
-  const apiMethods = ["get", "post", "delete", "put", "patch"];
-  const apiNumberRegex = /(API#\d+\.?)(\/API#\d+\.?)?/i;
+  const apiNumberRegex = /(API#\d+)/i;
 
-  const extractApiNumber = (operation) => {
+  const extractApiNumber = (operation: OperationObject): string => {
     const description = operation.description;
     const summary = operation.summary;
     const apiNumberInDescription = description?.match(apiNumberRegex);
     const apiNumberInSummary = summary?.match(apiNumberRegex);
 
     if (apiNumberInDescription) {
-      return apiNumberInDescription[0].replace(/\./g, "").toUpperCase();
+      return apiNumberInDescription[0].toUpperCase();
     }
     if (apiNumberInSummary) {
-      return apiNumberInSummary[0].replace(/\./g, "").toUpperCase();
+      return apiNumberInSummary[0].toUpperCase();
     }
-    return summary.replace(/\./g, "");
+    return summary;
   };
 
-  const apiNumber = swaggerDocs
-    .flatMap((swaggerDoc) =>
-      swaggerDoc.paths && swaggerDoc.paths[path]
-        ? Object.entries(swaggerDoc.paths[path])
-        : []
-    )
-    .filter(([method]) => apiMethods.includes(method.toLowerCase()))
-    .map(([, operation]) => extractApiNumber(operation))
-    .find((apiNumber) => apiNumber);
+  for (const swaggerDoc of swaggerDocs) {
+    if (swaggerDoc.paths && swaggerDoc.paths[path]) {
+      const operation = swaggerDoc.paths[path][httpMethod.toLowerCase()];
+      if (operation) {
+        return extractApiNumber(operation);
+      }
+    }
+  }
 
-  return apiNumber || "Unknown API";
+  return "Unknown API";
 }
 
 async function getWorkPackageFromJira(apiNumber: string, apiPath: string) {
