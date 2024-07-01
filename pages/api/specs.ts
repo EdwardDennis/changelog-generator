@@ -325,26 +325,6 @@ function getApiNumberByPath(
   return "Unknown API";
 }
 
-async function getWorkPackageFromJira(apiNumber: string, apiPath: string) {
-  const apiUrl = "http://localhost:3000/api/jira";
-  const jql = createJqlQuery(apiNumber, apiPath);
-
-  const response = await fetchJiraData(apiUrl, jql);
-  const data = await response.json();
-  return data;
-}
-
-function createJqlQuery(apiNumber: string, apiPath: string): string {
-  return `(
-    text ~ "${apiNumber}" OR
-    text ~ "${apiPath}"
-  )
-  AND
-  text ~ "swagger"
-  AND
-  issuekey ~ "MI*"`;
-}
-
 const handleChangeLogRequest = async (
   req: NextApiRequest,
   res: NextApiResponse,
@@ -373,19 +353,4 @@ async function getChangeLogMarkdown(body: object) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
   return await response.text();
-}
-
-async function fetchJiraData(apiUrl: string, jql: string): Promise<Response> {
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ jql }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response;
 }
