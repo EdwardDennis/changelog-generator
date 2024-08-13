@@ -39,6 +39,7 @@ export default function Home() {
 
   const getChangeLog = async () => {
     setLoading(true);
+    setChangelog(undefined);
 
     if (previousZip && newZip) {
       try {
@@ -67,7 +68,7 @@ export default function Home() {
   };
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto w-full h-screen p-4">
       <Head>
         <title>Change Log Generator</title>
       </Head>
