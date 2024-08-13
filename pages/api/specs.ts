@@ -44,8 +44,6 @@ const mkdtempAsync = promisify(mkdtemp);
 const unlinkAsync = promisify(unlink);
 const rmdirAsync = promisify(rmdir);
 
-const storedChanges: object[] = [];
-
 const ensurePostRequest = (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -66,32 +64,43 @@ const handleApiLogic = async (req: NextApiRequest, res: NextApiResponse) => {
     newZipBuffer
   );
 
-  await checkZipFilesForAdditionsAndDeletions(previousJsonFiles, newJsonFiles);
-
   const allFileNames = new Set([
     ...Object.keys(previousJsonFiles),
     ...Object.keys(newJsonFiles),
   ]);
-  let version: string | undefined;
 
   try {
-    for (const fileName of allFileNames) {
-      const base = previousJsonFiles[fileName];
-      const revision = newJsonFiles[fileName];
+    const result = await Array.from(allFileNames).reduce(
+      async (accPromise, fileName) => {
+        const { accumulatedChanges, version } = await accPromise;
 
-      version = validateVersionConsistency(fileName, version, revision);
+        const base = previousJsonFiles[fileName];
+        const revision = newJsonFiles[fileName];
 
-      if (base && revision) {
-        await processFileChanges(base, revision);
-      }
-    }
+        const currentVersion = validateVersionConsistency(
+          fileName,
+          version,
+          revision
+        );
+
+        if (base && revision) {
+          const fileChanges = await getApiChanges(base, revision);
+          return {
+            accumulatedChanges: accumulatedChanges.concat(fileChanges),
+            version: currentVersion,
+          };
+        }
+
+        return { accumulatedChanges, version: currentVersion };
+      },
+      Promise.resolve({ accumulatedChanges: [], version: undefined })
+    );
+
     const changeLogArgs = {
-      version: version,
+      version: result.version,
       workPackage: req.body.workPackageNumber,
-      changes: storedChanges,
+      changes: result.accumulatedChanges,
     };
-
-    console.log(storedChanges);
 
     handleChangeLogRequest(req, res, changeLogArgs);
   } catch (error) {
@@ -115,26 +124,29 @@ const validateVersionConsistency = (
   return version;
 };
 
-const processFileChanges = async (base: any, revision: any) => {
+const getApiChanges = async (base: any, revision: any) => {
   const output = await getDiff(base, revision);
   if (output.error) {
     throw new Error(output.error);
   }
   const outputArray = JSON.parse(output.stdout);
-  outputArray.forEach((change: any) => {
-    console.log(change);
+  const changes = outputArray.map((change: any) => {
     const apiNumberOrSummary = getApiNumberByPath(
       change.path,
       change.operation,
       [base, revision]
     );
-    storedChanges.push({
+    return {
       apiNumber: apiNumberOrSummary,
-      description: change.text,
+      description: formatChangeDescription(change.text),
       path: change.path,
-    });
+    };
   });
+  return changes;
 };
+
+const formatChangeDescription = (description: string) =>
+  description.replace("api", "API");
 
 const processZipFiles = async (
   previousZipBuffer: Buffer,
@@ -153,24 +165,20 @@ const processZipFiles = async (
   return [previousJsonFiles, newJsonFiles];
 };
 
-// Run a Docker command to compare JSON files
 export const getDiff = async (
   base: JsonFileContent,
   revision: JsonFileContent
 ) => {
-  // Create a temporary directory to store the JSON files
   const tempDir = await mkdtempAsync(join(tmpdir(), "json-"));
-
-  // Write the base and revision JSON content to temporary files
   const baseFilePath = join(tempDir, "base.json");
   const revisionFilePath = join(tempDir, "revision.json");
+
   await Promise.all([
     writeFileAsync(baseFilePath, JSON.stringify(base)),
     writeFileAsync(revisionFilePath, JSON.stringify(revision)),
   ]);
 
-  // Construct the Docker command with mounted volumes
-  const command = `docker run --rm -v ${baseFilePath}:/base.json -v ${revisionFilePath}:/revision.json tufin/oasdiff changelog --format=json /base.json /revision.json`;
+  const command = `docker run --rm -v ${baseFilePath}:/base.json -v ${revisionFilePath}:/revision.json tufin/oasdiff changelog --flatten-allof --format=json /base.json /revision.json`;
 
   try {
     const { stdout, stderr } = await execAsync(command);
@@ -181,7 +189,6 @@ export const getDiff = async (
   } catch (error) {
     return { error: error.message };
   } finally {
-    // Clean up temporary files and directory
     await Promise.all([
       unlinkAsync(baseFilePath),
       unlinkAsync(revisionFilePath),
@@ -195,7 +202,6 @@ export const getDiff = async (
   }
 };
 
-// Main handler function
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -240,50 +246,6 @@ async function getJsonFilesFromZip(
   }
 
   return jsonFiles;
-}
-
-function checkZipFilesForAdditionsAndDeletions(
-  previousJsonFiles: { [key: string]: any },
-  newJsonFiles: { [key: string]: any }
-) {
-  const previousFileNames = Object.keys(previousJsonFiles);
-  const newFileNames = Object.keys(newJsonFiles);
-
-  const addedFiles = newFileNames.filter(
-    (name) => !previousFileNames.includes(name)
-  );
-  const removedFiles = previousFileNames.filter(
-    (name) => !newFileNames.includes(name)
-  );
-
-  if (addedFiles.length > 0 || removedFiles.length > 0) {
-    processFiles(addedFiles, newJsonFiles, "New API added");
-    processFiles(removedFiles, previousJsonFiles, "API removed");
-  }
-}
-
-function processFiles(
-  fileNames: string[],
-  swaggerDocs: Record<string, JsonFileContent>,
-  changeType: string
-) {
-  fileNames.forEach((fileName) => {
-    const fileContent = swaggerDocs[fileName];
-    Object.keys(fileContent.paths).forEach((path) => {
-      const pathObject = fileContent.paths[path];
-      Object.keys(pathObject).forEach((method) => {
-        //TODO: see if this works
-        const apiNumberOrSummary = getApiNumberByPath(path, method, [
-          fileContent,
-        ]);
-        storedChanges.push({
-          apiNumber: apiNumberOrSummary,
-          description: changeType,
-          path: path,
-        });
-      });
-    });
-  });
 }
 
 function getApiNumberByPath(
