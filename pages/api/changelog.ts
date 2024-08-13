@@ -30,9 +30,7 @@ function generateChangeLog(version, workPackage, changes) {
       return firstApiNumberA - firstApiNumberB;
     })
     .map((change, idx) => {
-      return `${idx + 1}: ${change.apiNumber} - ${change.description} - path: ${
-        change.path
-      }`;
+      return `${idx + 1}: ${change.apiNumber} - ${change.description}`;
     })
     .join("\n");
 
