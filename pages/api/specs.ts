@@ -178,7 +178,7 @@ export const getDiff = async (
     writeFileAsync(revisionFilePath, JSON.stringify(revision)),
   ]);
 
-  const command = `docker run --rm -v ${baseFilePath}:/base.json -v ${revisionFilePath}:/revision.json tufin/oasdiff changelog --flatten-allof --format=json /base.json /revision.json`;
+  const command = `oasdiff changelog --flatten-allof --format=json ${baseFilePath} ${revisionFilePath}`;
 
   try {
     const { stdout, stderr } = await execAsync(command);
